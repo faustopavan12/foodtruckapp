@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <link rel="manifest" href="manifest.json">
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js');
+    }
+  </script>
+    
+    <meta charset="UTF-8" />
+    <title>Control Food Truck</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+    <h1>Control de Gastos y Ventas - Food Truck</h1>
+
+    <h2>Registrar Venta</h2>
+    <form id="formVenta">
+        <input type="date" id="fechaVenta" required />
+        <input type="number" id="montoVenta" placeholder="Monto" required />
+        <input type="text" id="descVenta" placeholder="Descripción" required />
+        <button class="btn" type="submit">Agregar Venta</button>
+    </form>
+
+    <h2>Registrar Gasto</h2>
+    <form id="formGasto">
+        <input type="date" id="fechaGasto" required />
+        <input type="number" id="montoGasto" placeholder="Monto" required />
+        <select id="categoriaGasto">
+            <option value="insumos">Insumos</option>
+            <option value="transporte">Transporte</option>
+            <option value="otros">Otros</option>
+        </select>
+        <input type="text" id="descGasto" placeholder="Descripción" required />
+        <button class="btn" type="submit">Agregar Gasto</button>
+    </form>
+
+    <h2>Resumen</h2>
+    <div id="resumen" class="resumen-box"></div>
+
+
+    <h2>💰 Ventas</h2>
+    <table id="tablaVentas">
+        <thead>
+            <tr>
+                <th>Fecha</th>
+                <th>Monto</th>
+                <th>Descripción</th>
+                <th></th> <!-- columna para el botón de eliminar -->
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <h2>🧾 Gastos</h2>
+    <table id="tablaGastos">
+        <thead>
+            <tr>
+                <th>Fecha</th>
+                <th>Monto</th>
+                <th>Categoría</th>
+                <th>Descripción</th>
+                <th></th> <!-- columna para el botón de eliminar -->
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <button class="btn" onclick="exportarDatos()">Exportar a JSON</button>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Cargar y validar datos guardados para evitar errores
+            function cargarDatosClave(clave) {
+                let datos = JSON.parse(localStorage.getItem(clave));
+                if (!datos || typeof datos !== 'object') return {};
+                // Validar que cada propiedad sea un array
+                for (const mes in datos) {
+                    if (!Array.isArray(datos[mes])) {
+                        console.warn(`${clave}[${mes}] no es un array, se reinicia`);
+                        datos[mes] = [];
+                    }
+                }
+                return datos;
+            }
+
+            const ventas = cargarDatosClave('ventas');
+            const gastos = cargarDatosClave('gastos');
+
+            function guardarDatos() {
+                localStorage.setItem('ventas', JSON.stringify(ventas));
+                localStorage.setItem('gastos', JSON.stringify(gastos));
+                render(document.getElementById('selectMes')?.value || '');
+            }
+
+            document.getElementById('formVenta').addEventListener('submit', e => {
+                e.preventDefault();
+                const fecha = document.getElementById('fechaVenta').value;
+                const mes = fecha.slice(0, 7); // YYYY-MM
+                const nuevaVenta = {
+                    fecha,
+                    monto: parseFloat(document.getElementById('montoVenta').value),
+                    descripcion: document.getElementById('descVenta').value
+                };
+                if (!ventas[mes]) ventas[mes] = [];
+                if (!Array.isArray(ventas[mes])) {
+                    console.warn(`ventas[${mes}] no era array, se reinicia`);
+                    ventas[mes] = [];
+                }
+                ventas[mes].push(nuevaVenta);
+                guardarDatos();
+                e.target.reset();
+            });
+
+            document.getElementById('formGasto').addEventListener('submit', e => {
+                e.preventDefault();
+                const fecha = document.getElementById('fechaGasto').value;
+                const mes = fecha.slice(0, 7); // YYYY-MM
+                const nuevoGasto = {
+                    fecha,
+                    monto: parseFloat(document.getElementById('montoGasto').value),
+                    categoria: document.getElementById('categoriaGasto').value,
+                    descripcion: document.getElementById('descGasto').value
+                };
+                if (!gastos[mes]) gastos[mes] = [];
+                if (!Array.isArray(gastos[mes])) {
+                    console.warn(`gastos[${mes}] no era array, se reinicia`);
+                    gastos[mes] = [];
+                }
+                gastos[mes].push(nuevoGasto);
+                guardarDatos();
+                e.target.reset();
+            });
+
+            function render(mesFiltrado = '') {
+                const tbodyVentas = document.querySelector('#tablaVentas tbody');
+                const tbodyGastos = document.querySelector('#tablaGastos tbody');
+                tbodyVentas.innerHTML = '';
+                tbodyGastos.innerHTML = '';
+                const resumen = document.getElementById('resumen');
+
+                let totalVentas = 0;
+                let totalGastos = 0;
+
+                const mesesVentas = Object.keys(ventas).sort();
+                const mesesGastos = Object.keys(gastos).sort();
+                const todosLosMeses = Array.from(new Set([...mesesVentas, ...mesesGastos])).sort();
+
+                // Ventas agrupadas
+                mesesVentas.forEach(mes => {
+                    if (mesFiltrado && mes !== mesFiltrado) return;
+
+                    if (!Array.isArray(ventas[mes])) {
+                        console.warn(`ventas[${mes}] no es un array, se salta`);
+                        return;
+                    }
+
+                    let totalMes = 0;
+                    const filaMes = document.createElement('tr');
+                    filaMes.innerHTML = `<td colspan="4" style="background:#d0e9ff; font-weight:bold;">Mes: ${mes}</td>`;
+                    tbodyVentas.appendChild(filaMes);
+
+                    ventas[mes].forEach((v, i) => {
+                        totalVentas += v.monto;
+                        totalMes += v.monto;
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                    <td>${v.fecha}</td>
+                    <td>$${v.monto.toFixed(2)}</td>
+                    <td>${v.descripcion}</td>
+                    <td><button class="btn btn-delete" onclick="eliminarVenta('${mes}', ${i})">🗑️</button></td>
+                `;
+                        tbodyVentas.appendChild(row);
+                    });
+
+                    const filaTotalMes = document.createElement('tr');
+                    filaTotalMes.innerHTML = `
+                <td colspan="4" style="text-align:right; font-weight:bold;">Total ${mes}: $${totalMes.toFixed(2)}</td>
+            `;
+                    tbodyVentas.appendChild(filaTotalMes);
+                });
+
+                // Gastos agrupados
+                mesesGastos.forEach(mes => {
+                    if (mesFiltrado && mes !== mesFiltrado) return;
+
+                    if (!Array.isArray(gastos[mes])) {
+                        console.warn(`gastos[${mes}] no es un array, se salta`);
+                        return;
+                    }
+
+                    let totalMes = 0;
+                    const filaMes = document.createElement('tr');
+                    filaMes.innerHTML = `<td colspan="5" style="background:#ffe0e0; font-weight:bold;">Mes: ${mes}</td>`;
+                    tbodyGastos.appendChild(filaMes);
+
+                    gastos[mes].forEach((g, i) => {
+                        totalGastos += g.monto;
+                        totalMes += g.monto;
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                    <td>${g.fecha}</td>
+                    <td>$${g.monto.toFixed(2)}</td>
+                    <td>${g.categoria}</td>
+                    <td>${g.descripcion}</td>
+                    <td><button class="btn btn-delete" onclick="eliminarGasto('${mes}', ${i})">🗑️</button></td>
+                `;
+                        tbodyGastos.appendChild(row);
+                    });
+
+                    const filaTotalMes = document.createElement('tr');
+                    filaTotalMes.innerHTML = `
+                <td colspan="5" style="text-align:right; font-weight:bold;">Total ${mes}: $${totalMes.toFixed(2)}</td>
+            `;
+                    tbodyGastos.appendChild(filaTotalMes);
+                });
+
+                const ganancia = totalVentas - totalGastos;
+
+                resumen.innerHTML = `
+            <span class="ventas">Total Ventas: $${totalVentas.toFixed(2)}</span>
+            <span class="gastos">Total Gastos: $${totalGastos.toFixed(2)}</span>
+            <span class="ganancia">Ganancia: $${ganancia.toFixed(2)}</span>
+        `;
+
+                actualizarFiltroMeses(todosLosMeses, mesFiltrado);
+            }
+
+            function eliminarVenta(mes, index) {
+                if (confirm("¿Estás seguro de que querés eliminar esta venta?")) {
+                    if (ventas[mes] && Array.isArray(ventas[mes])) {
+                        ventas[mes].splice(index, 1);
+                        if (ventas[mes].length === 0) delete ventas[mes];
+                        guardarDatos();
+                    }
+                }
+            }
+
+            function eliminarGasto(mes, index) {
+                if (confirm("¿Estás seguro de que querés eliminar este gasto?")) {
+                    if (gastos[mes] && Array.isArray(gastos[mes])) {
+                        gastos[mes].splice(index, 1);
+                        if (gastos[mes].length === 0) delete gastos[mes];
+                        guardarDatos();
+                    }
+                }
+            }
+
+            function exportarDatos() {
+                const data = { ventas, gastos };
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'foodtruck-datos.json';
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+
+            function actualizarFiltroMeses(meses, seleccionado) {
+                let contenedor = document.getElementById('filtroMes');
+                if (!contenedor) {
+                    contenedor = document.createElement('div');
+                    contenedor.id = 'filtroMes';
+                    contenedor.innerHTML = `
+                <label for="selectMes"><strong>Filtrar por mes:</strong></label> 
+                <select id="selectMes" onchange="filtrarPorMes()">
+                    <option value="">Todos</option>
+                </select>
+            `;
+                    document.body.insertBefore(contenedor, document.getElementById('tablaVentas'));
+                }
+
+                const select = document.getElementById('selectMes');
+                select.innerHTML = `<option value="">Todos</option>`;
+                meses.forEach(m => {
+                    const option = document.createElement('option');
+                    option.value = m;
+                    option.textContent = m;
+                    if (m === seleccionado) option.selected = true;
+                    select.appendChild(option);
+                });
+            }
+
+            window.filtrarPorMes = function () {
+                const mes = document.getElementById('selectMes').value;
+                render(mes);
+            }
+
+            window.eliminarVenta = eliminarVenta;
+            window.eliminarGasto = eliminarGasto;
+
+            render();
+        });
+    </script>
+
+</body>
+
+</html>
